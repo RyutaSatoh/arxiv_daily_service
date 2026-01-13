@@ -9,17 +9,20 @@
 <body class="bg-light">
     <div class="container py-5">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1>ArXiv CS.CV Daily Summary</h1>
-            <a href="{{ url_for('favorites') }}" class="btn btn-warning">★ Saved Papers</a>
+            <div>
+                <h1>ArXiv CS.CV Daily Summary</h1>
+                <small class="text-muted">User: {{ username }}</small> | <a href="{{ url_for('landing') }}" class="text-muted small text-decoration-none">Change User</a>
+            </div>
+            <a href="{{ url_for('favorites', username=username) }}" class="btn btn-warning">★ Saved Papers</a>
         </div>
         
         <div class="list-group">
             {% for date in dates %}
             <div class="list-group-item d-flex justify-content-between align-items-center">
-                <a href="{{ url_for('detail', date_str=date) }}" class="text-decoration-none text-dark flex-grow-1">
+                <a href="{{ url_for('detail', username=username, date_str=date) }}" class="text-decoration-none text-dark flex-grow-1">
                     {{ date }} の論文一覧
                 </a>
-                <a href="{{ url_for('player', date_str=date) }}" class="btn btn-primary btn-sm ms-2">
+                <a href="{{ url_for('player', username=username, date_str=date) }}" class="btn btn-primary btn-sm ms-2">
                     🎧 Listen (Player)
                 </a>
             </div>

@@ -38,7 +38,7 @@
         <!-- Top Info -->
         <div class="d-flex justify-content-between text-muted mb-2">
             <span id="counter">1 / {{ papers|length }}</span>
-            <a href="{{ url_for('index') }}" class="text-decoration-none text-muted">Exit</a>
+            <a href="{{ url_for('index', username=username) }}" class="text-decoration-none text-muted">Exit</a>
         </div>
         
         <div class="progress">
@@ -105,9 +105,11 @@
 
     <script>
         const papers = {{ papers | tojson }};
-        const currentDate = "{{ date }}"; // Unique key for storage
-        const storageKey = `arxiv_player_index_${currentDate}`;
-        const speedKey = 'arxiv_player_speed';
+        const currentDate = "{{ date }}"; 
+        const username = "{{ username }}";
+        // Scope storage by username
+        const storageKey = `arxiv_${username}_index_${currentDate}`;
+        const speedKey = `arxiv_${username}_speed`;
         
         let currentIndex = 0;
         let isPlaying = false;
@@ -261,7 +263,7 @@
         function playCurrent() {
             if (currentIndex >= papers.length) {
                 alert("All papers finished!");
-                window.location.href = "{{ url_for('index') }}";
+                window.location.href = "{{ url_for('index', username=username) }}";
                 return;
             }
             
@@ -332,7 +334,7 @@
             const originalText = btn.innerText;
             btn.innerText = "Saving...";
             
-            fetch("{{ url_for('save_paper') }}", {
+            fetch("{{ url_for('save_paper', username=username) }}", {
                 method: "POST",
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(p)

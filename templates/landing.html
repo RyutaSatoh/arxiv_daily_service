@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArXiv Daily Service - Login</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body, html { height: 100%; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa; }
+        .login-card { width: 100%; max-width: 400px; padding: 30px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); background: white; }
+    </style>
+    <script>
+        function login() {
+            const username = document.getElementById('username').value.trim();
+            if (username) {
+                // Save to localStorage for convenience/redirects if needed later
+                localStorage.setItem('arxiv_username', username);
+                // Redirect to user dashboard
+                window.location.href = `/u/${username}`;
+            } else {
+                alert('ユーザー名を入力してください');
+            }
+        }
+        
+        // Auto-fill or redirect if previously visited?
+        window.onload = function() {
+            const savedUser = localStorage.getItem('arxiv_username');
+            if (savedUser) {
+                document.getElementById('username').value = savedUser;
+            }
+        };
+    </script>
+</head>
+<body>
+    <div class="login-card text-center">
+        <h2 class="mb-4">ArXiv Daily Service</h2>
+        <p class="text-muted mb-4">ユーザー名を入力して開始してください。<br>(保存用スペースが作成されます)</p>
+        
+        <div class="mb-3">
+            <input type="text" id="username" class="form-control form-control-lg text-center" placeholder="Username (e.g. ryuta)" onkeypress="if(event.key==='Enter') login()">
+        </div>
+        
+        <button class="btn btn-primary btn-lg w-100" onclick="login()">Start</button>
+    </div>
+</body>
+</html>

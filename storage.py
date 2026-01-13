@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-FAVORITES_FILE = os.path.join(DATA_DIR, 'favorites.json')
+USERS_DIR = os.path.join(DATA_DIR, 'users')
 
 def save_daily_data(data, date_str=None):
     if not os.path.exists(DATA_DIR):
@@ -31,19 +31,29 @@ def get_available_dates():
     if not os.path.exists(DATA_DIR):
         return []
     
-    files = [f for f in os.listdir(DATA_DIR) if f.endswith('.json') and f != 'favorites.json']
+    # Filter out directories and non-json files
+    files = [f for f in os.listdir(DATA_DIR) 
+             if f.endswith('.json') and os.path.isfile(os.path.join(DATA_DIR, f))]
     dates = [f.replace('.json', '') for f in files]
     dates.sort(reverse=True)
     return dates
 
-def get_favorites():
-    if not os.path.exists(FAVORITES_FILE):
+def _get_user_favorites_file(username):
+    user_dir = os.path.join(USERS_DIR, username)
+    if not os.path.exists(user_dir):
+        os.makedirs(user_dir)
+    return os.path.join(user_dir, 'favorites.json')
+
+def get_favorites(username):
+    filepath = _get_user_favorites_file(username)
+    if not os.path.exists(filepath):
         return []
-    with open(FAVORITES_FILE, 'r', encoding='utf-8') as f:
+    with open(filepath, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-def save_favorite(paper):
-    favorites = get_favorites()
+def save_favorite(username, paper):
+    favorites = get_favorites(username)
+    filepath = _get_user_favorites_file(username)
     
     # Check if already exists
     for fav in favorites:
@@ -54,33 +64,36 @@ def save_favorite(paper):
     paper['saved_at'] = datetime.now().isoformat()
     favorites.insert(0, paper) # Add to top
     
-    with open(FAVORITES_FILE, 'w', encoding='utf-8') as f:
+    with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(favorites, f, ensure_ascii=False, indent=2)
     return True
 
-def delete_favorite(paper_id):
-    favorites = get_favorites()
+def delete_favorite(username, paper_id):
+    favorites = get_favorites(username)
+    filepath = _get_user_favorites_file(username)
+    
     original_len = len(favorites)
     favorites = [p for p in favorites if p.get('id') != paper_id]
     
     if len(favorites) != original_len:
-        with open(FAVORITES_FILE, 'w', encoding='utf-8') as f:
+        with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(favorites, f, ensure_ascii=False, indent=2)
         return True
     return False
 
-def delete_favorites_by_date(date_str):
+def delete_favorites_by_date(username, date_str):
     """
     date_str: 'YYYY-MM-DD'
-    Removes all favorites saved on this date (local time based on saved_at string).
     """
-    favorites = get_favorites()
+    favorites = get_favorites(username)
+    filepath = _get_user_favorites_file(username)
+    
     original_len = len(favorites)
     # saved_at is ISO format "2026-01-13T10:00:00..."
     favorites = [p for p in favorites if not p.get('saved_at', '').startswith(date_str)]
     
     if len(favorites) != original_len:
-        with open(FAVORITES_FILE, 'w', encoding='utf-8') as f:
+        with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(favorites, f, ensure_ascii=False, indent=2)
         return True
     return False

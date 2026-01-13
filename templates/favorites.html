@@ -19,7 +19,7 @@
             // Set timeout for actual deletion
             const timeoutId = setTimeout(() => {
                 // Time's up: Send delete request
-                fetch("{{ url_for('delete_favorite') }}", {
+                fetch("{{ url_for('delete_favorite', username=username) }}", {
                     method: "POST",
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id: id })
@@ -52,7 +52,7 @@
         function deleteDate(dateStr) {
             if (!confirm(dateStr + ' に保存された全ての論文を削除しますか？')) return;
             
-            fetch("{{ url_for('delete_favorites_by_date') }}", {
+            fetch("{{ url_for('delete_favorites_by_date', username=username) }}", {
                 method: "POST",
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ date: dateStr })
@@ -72,7 +72,7 @@
     <div class="container py-5">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1>保存した論文 (Favorites)</h1>
-            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">戻る</a>
+            <a href="{{ url_for('index', username=username) }}" class="btn btn-outline-secondary">戻る</a>
         </div>
         
         {% if not grouped_papers %}
