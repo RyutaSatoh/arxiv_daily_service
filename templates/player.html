@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Player - {{ date }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Use dvh for mobile browsers to account for address bars */
+        body { background-color: #121212; color: #e0e0e0; height: 100dvh; overflow: hidden; margin: 0; }
+        .player-container { 
+            height: 100%; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: space-between; 
+            padding: 20px;
+            /* Respect safe area for iPhone X+ */
+            padding-bottom: calc(20px + env(safe-area-inset-bottom));
+        }
+        .info-area { flex-grow: 1; overflow-y: auto; text-align: center; display: flex; flex-direction: column; justify-content: center; }
+        .controls-area { flex-shrink: 0; padding-top: 20px; padding-bottom: 10px; }
+        
+        h2 { font-size: 1.2rem; margin-bottom: 10px; color: #81b0ff; }
+        h1 { font-size: 1.5rem; font-weight: bold; margin-bottom: 20px; line-height: 1.3; }
+        .contribution { font-size: 1.2rem; color: #ffeb3b; margin-bottom: 20px; border: 1px solid #444; padding: 10px; border-radius: 8px; }
+        .summary { font-size: 1rem; color: #aaa; }
+        
+        .btn-large { width: 100%; height: 80px; font-size: 1.5rem; margin-bottom: 10px; border-radius: 12px; }
+        .btn-control { height: 60px; font-size: 1.2rem; }
+        
+        /* Progress bar */
+        .progress { height: 5px; margin-bottom: 15px; background-color: #333; }
+        .progress-bar { background-color: #0d6efd; }
+    </style>
+</head>
+<body>
+    <div class="player-container">
+        <!-- Top Info -->
+        <div class="d-flex justify-content-between text-muted mb-2">
+            <span id="counter">1 / {{ papers|length }}</span>
+            <a href="{{ url_for('index') }}" class="text-decoration-none text-muted">Exit</a>
+        </div>
+        
+        <div class="progress">
+            <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="info-area">
+            <h2 id="paper-id">ID: Loading...</h2>
+            <h1 id="paper-title">Press Play to Start</h1>
+            <div id="paper-contribution" class="contribution"></div>
+            <div id="paper-summary" class="summary"></div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-area">
+            <div id="start-overlay" class="d-grid gap-2">
+                <button class="btn btn-primary btn-large" onclick="startPlayer()">▶ 続きから再生 (Resume)</button>
+                <button class="btn btn-outline-light btn-control" onclick="startFromBeginning()">最初から再生 (Start from beginning)</button>
+                
+                <div class="mt-3">
+                    <label class="form-label text-muted">読み上げ速度 (Speed)</label>
+                    <select id="speed-select" class="form-select bg-dark text-light border-secondary" onchange="setSpeed(this.value)">
+                        <option value="1.0">1.0x (Normal)</option>
+                        <option value="1.2">1.2x</option>
+                        <option value="1.5">1.5x (Default)</option>
+                        <option value="1.8">1.8x</option>
+                        <option value="2.0">2.0x</option>
+                        <option value="2.5">2.5x</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div id="play-controls" class="d-none">
+                <!-- Speed Control during playback -->
+                <div class="mb-3">
+                     <select id="speed-select-active" class="form-select bg-dark text-light border-secondary form-select-sm" onchange="setSpeed(this.value)">
+                        <option value="1.0">Speed: 1.0x</option>
+                        <option value="1.2">Speed: 1.2x</option>
+                        <option value="1.5">Speed: 1.5x</option>
+                        <option value="1.8">Speed: 1.8x</option>
+                        <option value="2.0">Speed: 2.0x</option>
+                        <option value="2.5">Speed: 2.5x</option>
+                    </select>
+                </div>
+
+                <div class="row g-2">
+                    <div class="col-6">
+                        <button class="btn btn-outline-light btn-control w-100" onclick="togglePause()" id="btn-pause">⏸ Pause</button>
+                    </div>
+                     <div class="col-6">
+                        <button class="btn btn-outline-light btn-control w-100" onclick="prevPaper()">⏮ Back</button>
+                    </div>
+                </div>
+                <div class="mt-2">
+                     <button class="btn btn-warning btn-large text-dark fw-bold" onclick="saveAndNext()">★ 保存して次へ (Save)</button>
+                </div>
+                <div>
+                     <button class="btn btn-secondary btn-control w-100" onclick="nextPaper()">➡ スキップ (Next)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const papers = {{ papers | tojson }};
+        const currentDate = "{{ date }}"; // Unique key for storage
+        const storageKey = `arxiv_player_index_${currentDate}`;
+        const speedKey = 'arxiv_player_speed';
+        
+        let currentIndex = 0;
+        let isPlaying = false;
+        let isPaused = false;
+        let utterance = null;
+        let wakeLock = null;
+        let shouldAutoAdvance = false;
+        let autoNextTimer = null;
+        let playbackRate = 1.5; // Default fast
+
+        // --- Init Settings ---
+        function initSettings() {
+            const savedSpeed = localStorage.getItem(speedKey);
+            if (savedSpeed) {
+                playbackRate = parseFloat(savedSpeed);
+            }
+            // Update all speed selectors
+            updateSpeedSelectors(playbackRate);
+        }
+        
+        function updateSpeedSelectors(val) {
+            const valStr = val.toString();
+            // Start screen selector
+            const s1 = document.getElementById('speed-select');
+            if (s1) s1.value = valStr;
+            // Active screen selector
+            const s2 = document.getElementById('speed-select-active');
+            if (s2) s2.value = valStr;
+        }
+        
+        function setSpeed(val) {
+            playbackRate = parseFloat(val);
+            localStorage.setItem(speedKey, playbackRate);
+            updateSpeedSelectors(playbackRate);
+            
+            // If playing (controls visible), restart current paper to apply speed
+            const controls = document.getElementById('play-controls');
+            if (controls && !controls.classList.contains('d-none')) {
+                // Restarting allows the new rate to take effect
+                // We add a small delay to ensure UI update doesn't clash with speech cancel
+                setTimeout(playCurrent, 100);
+            }
+        }
+
+        // --- Wake Lock ---
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (err) {
+                console.error(`${err.name}, ${err.message}`);
+            }
+        }
+
+        // --- TTS Logic ---
+        function speakText(text, callback) {
+            // Always cancel before speaking to clear queue
+            window.speechSynthesis.cancel();
+            
+            // Small delay to ensure cancel finishes (fix for some browsers)
+            setTimeout(() => {
+                utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'ja-JP';
+                utterance.rate = playbackRate;
+                
+                utterance.onend = function() {
+                    utterance = null;
+                    if (callback) callback();
+                };
+                
+                utterance.onerror = function(e) {
+                    console.error('Speech error', e);
+                    // Even on error, we might want to callback to advance?
+                    // For now, let's just log.
+                };
+
+                window.speechSynthesis.speak(utterance);
+            }, 50);
+        }
+
+        function stopSpeech() {
+            shouldAutoAdvance = false;
+            if (autoNextTimer) {
+                clearTimeout(autoNextTimer);
+                autoNextTimer = null;
+            }
+            window.speechSynthesis.cancel();
+            isPaused = false;
+            document.getElementById('btn-pause').innerText = "⏸ Pause";
+        }
+
+        function togglePause() {
+            if (window.speechSynthesis.paused) {
+                window.speechSynthesis.resume();
+                isPaused = false;
+                document.getElementById('btn-pause').innerText = "⏸ Pause";
+            } else {
+                window.speechSynthesis.pause();
+                isPaused = true;
+                document.getElementById('btn-pause').innerText = "▶ Resume";
+            }
+        }
+
+        // --- Player Logic ---
+        function updateUI() {
+            const p = papers[currentIndex];
+            document.getElementById('counter').innerText = `${currentIndex + 1} / ${papers.length}`;
+            document.getElementById('progress-bar').style.width = `${((currentIndex + 1) / papers.length) * 100}%`;
+            
+            document.getElementById('paper-id').innerText = p.id || '';
+            document.getElementById('paper-title').innerText = p.title;
+            document.getElementById('paper-contribution').innerText = p.contribution_ja || "No contribution info";
+            document.getElementById('paper-summary').innerText = p.summary_ja || "No summary";
+            
+            // Save position
+            localStorage.setItem(storageKey, currentIndex);
+        }
+
+        function startPlayer() {
+            // Restore position if available
+            const savedIndex = localStorage.getItem(storageKey);
+            if (savedIndex !== null) {
+                const idx = parseInt(savedIndex, 10);
+                if (!isNaN(idx) && idx >= 0 && idx < papers.length) {
+                    currentIndex = idx;
+                }
+            }
+            beginPlayback();
+        }
+
+        function startFromBeginning() {
+            currentIndex = 0;
+            localStorage.removeItem(storageKey);
+            beginPlayback();
+        }
+
+        function beginPlayback() {
+            // Reset everything
+            window.speechSynthesis.cancel();
+            
+            document.getElementById('start-overlay').classList.add('d-none');
+            document.getElementById('play-controls').classList.remove('d-none');
+            requestWakeLock();
+            playCurrent();
+        }
+        
+        // Initialize settings on load
+        window.onload = initSettings;
+
+        function playCurrent() {
+            if (currentIndex >= papers.length) {
+                alert("All papers finished!");
+                window.location.href = "{{ url_for('index') }}";
+                return;
+            }
+            
+            updateUI();
+            const p = papers[currentIndex];
+            
+            shouldAutoAdvance = true;
+
+            const textToRead = `
+                タイトル。${p.title}。
+                
+                貢献。${p.contribution_ja || 'なし'}。
+                
+                要約。${p.summary_ja || 'なし'}。
+            `;
+            
+            speakText(textToRead, () => {
+                if (shouldAutoAdvance && !isPaused) {
+                    autoNextTimer = setTimeout(() => {
+                        if (shouldAutoAdvance && !isPaused) {
+                             nextPaper();
+                        }
+                    }, 2000);
+                }
+            });
+        }
+
+        function nextPaper() {
+            stopSpeech();
+            currentIndex++;
+            if (currentIndex >= papers.length) {
+                currentIndex = 0; // Stop at end
+                alert("End of list.");
+                return;
+            }
+            // Small delay before playing next to allow stopSpeech to settle
+            setTimeout(playCurrent, 100);
+        }
+
+        function prevPaper() {
+            stopSpeech();
+            if (currentIndex > 0) currentIndex--;
+            setTimeout(playCurrent, 100);
+        }
+
+        function nextPaper() {
+            stopSpeech();
+            currentIndex++;
+            if (currentIndex >= papers.length) {
+                currentIndex = 0; // Loop or stop? Stop for now.
+                alert("End of list.");
+                return;
+            }
+            playCurrent();
+        }
+
+        function prevPaper() {
+            stopSpeech();
+            if (currentIndex > 0) currentIndex--;
+            playCurrent();
+        }
+
+        function saveAndNext() {
+            const p = papers[currentIndex];
+            
+            // Visual feedback
+            const btn = event.target;
+            const originalText = btn.innerText;
+            btn.innerText = "Saving...";
+            
+            fetch("{{ url_for('save_paper') }}", {
+                method: "POST",
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(p)
+            })
+            .then(res => res.json())
+            .then(data => {
+                console.log("Saved:", data);
+                btn.innerText = originalText;
+                nextPaper();
+            })
+            .catch(err => {
+                console.error(err);
+                btn.innerText = "Error";
+                setTimeout(() => { btn.innerText = originalText; nextPaper(); }, 1000);
+            });
+        }
+        
+        // Handle visibility change to re-acquire wake lock if needed
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
+    </script>
+</body>
+</html>
