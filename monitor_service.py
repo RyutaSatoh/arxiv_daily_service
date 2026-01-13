@@ -69,13 +69,7 @@ def monitor_loop():
                         if os.path.exists(json_path):
                             print(f"Successfully created {json_path}.")
                         else:
-                            print(f"Job ran, but {json_path} was not found. Main job might have saved with system date.")
-                            # Check if a file with system date exists
-                            sys_date = datetime.datetime.now().strftime('%Y-%m-%d')
-                            sys_path = os.path.join(DATA_DIR, f"{sys_date}.json")
-                            if os.path.exists(sys_path) and sys_date != target_date_str:
-                                print(f"Renaming {sys_path} to {json_path} to match arXiv header.")
-                                os.rename(sys_path, json_path)
+                            print(f"Job finished, but {json_path} was not created. Check logs.")
                             
                     except Exception as e:
                         print(f"Error running daily job: {e}")

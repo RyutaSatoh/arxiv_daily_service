@@ -9,8 +9,8 @@ def run_daily_job():
     
     # 1. Fetch
     print("Fetching papers from arXiv...")
-    papers = scraper.fetch_papers()
-    print(f"Fetched {len(papers)} papers.")
+    papers, date_str = scraper.fetch_papers()
+    print(f"Fetched {len(papers)} papers for date {date_str}.")
     
     if not papers:
         print("No papers found or error fetching.")
@@ -23,8 +23,8 @@ def run_daily_job():
     processed_papers = summarizer.summarize_and_translate(papers)
     
     # 3. Save
-    print("Saving data...")
-    storage.save_daily_data(processed_papers)
+    print(f"Saving data to {date_str}...")
+    storage.save_daily_data(processed_papers, date_str)
     print("Job complete.")
 
 if __name__ == "__main__":
