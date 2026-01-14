@@ -309,25 +309,10 @@
             setTimeout(playCurrent, 100);
         }
 
-        function nextPaper() {
-            stopSpeech();
-            currentIndex++;
-            if (currentIndex >= papers.length) {
-                currentIndex = 0; // Loop or stop? Stop for now.
-                alert("End of list.");
-                return;
-            }
-            playCurrent();
-        }
-
-        function prevPaper() {
-            stopSpeech();
-            if (currentIndex > 0) currentIndex--;
-            playCurrent();
-        }
-
         function saveAndNext() {
             const p = papers[currentIndex];
+            // Add source list date for grouping
+            p.list_date = currentDate;
             
             // Visual feedback
             const btn = event.target;

@@ -36,8 +36,12 @@ def favorites(username):
     # Group by date
     grouped_papers = {}
     for p in raw_papers:
-        # Extract YYYY-MM-DD from saved_at (ISO string)
-        date_key = p.get('saved_at', '').split('T')[0]
+        # Use list_date if available (publication list date), else fallback to saved date
+        date_key = p.get('list_date')
+        if not date_key:
+            # Extract YYYY-MM-DD from saved_at (ISO string)
+            date_key = p.get('saved_at', '').split('T')[0]
+        
         if not date_key:
             date_key = "Unknown"
         
