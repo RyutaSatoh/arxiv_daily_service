@@ -4,3 +4,5 @@ beautifulsoup4
 google-generativeai
 schedule
 markdown
+pymupdf
+reportlab

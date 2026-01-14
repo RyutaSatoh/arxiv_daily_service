@@ -66,6 +66,39 @@
                 }
             });
         }
+
+        function generateSlides(dateStr, btn) {
+            const originalText = btn.innerText;
+            btn.innerText = "生成中 (Generating)...";
+            btn.disabled = true;
+            
+            fetch("{{ url_for('generate_slides', username=username) }}", {
+                method: "POST",
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: dateStr })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    btn.innerText = "完了 (Done)!";
+                    window.location.href = data.download_url;
+                    setTimeout(() => {
+                        btn.innerText = originalText;
+                        btn.disabled = false;
+                    }, 3000);
+                } else {
+                    alert('生成に失敗しました: ' + (data.message || 'Unknown error'));
+                    btn.innerText = originalText;
+                    btn.disabled = false;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('エラーが発生しました');
+                btn.innerText = originalText;
+                btn.disabled = false;
+            });
+        }
     </script>
 </head>
 <body class="bg-light">
@@ -83,9 +116,16 @@
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">{{ date }}</h5>
-                <button class="btn btn-danger btn-sm" onclick="deleteDate('{{ date }}')">
-                    この日の履歴を全て削除
-                </button>
+                <div>
+                    {% if can_generate_slides %}
+                    <button class="btn btn-primary btn-sm me-2" onclick="generateSlides('{{ date }}', this)">
+                        📄 Generate Slides (PDF)
+                    </button>
+                    {% endif %}
+                    <button class="btn btn-danger btn-sm" onclick="deleteDate('{{ date }}')">
+                        削除 (Delete Day)
+                    </button>
+                </div>
             </div>
             <div class="list-group list-group-flush">
                 {% for paper in grouped_papers[date] %}
