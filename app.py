@@ -5,7 +5,7 @@ import os
 
 app = Flask(__name__)
 
-SLIDE_GEN_WHITELIST = {'ryuta'}
+SLIDE_GEN_WHITELIST = {'ryuta', 'yusuke'}
 
 @app.route('/')
 def landing():
@@ -100,7 +100,15 @@ def generate_slides(username):
         
     # Get papers for this date
     favorites = storage.get_favorites(username)
-    target_papers = [p for p in favorites if p.get('saved_at', '').startswith(date_str)]
+    target_papers = []
+    for p in favorites:
+        # Determine the paper's logical date
+        p_date = p.get('list_date')
+        if not p_date:
+            p_date = p.get('saved_at', '').split('T')[0]
+            
+        if p_date == date_str:
+            target_papers.append(p)
     
     if not target_papers:
         return jsonify({'status': 'error', 'message': 'No saved papers for this date'}), 404
