@@ -5,6 +5,10 @@ __pycache__/
 
 # Data
 data/
+logs/
+
+# Secrets & Config
+arxiv_supervisor.conf
 
 # IDEs
 .vscode/
