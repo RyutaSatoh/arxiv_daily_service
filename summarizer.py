@@ -3,11 +3,25 @@ import google.generativeai as genai
 import time
 import json
 import re
+import logging
+
+# Configure logging
+LOG_DIR = os.path.join(os.path.dirname(__file__), 'logs')
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
+    
+logging.basicConfig(
+    filename=os.path.join(LOG_DIR, 'summarizer.log'),
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
 
 def configure_genai():
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable not set.")
+        error_msg = "GEMINI_API_KEY environment variable not set."
+        logging.error(error_msg)
+        raise ValueError(error_msg)
     genai.configure(api_key=api_key)
 
 def process_batch(model, batch_papers):
@@ -42,29 +56,39 @@ def process_batch(model, batch_papers):
     ]
     """
 
-    try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        
-        # Clean up potential markdown code blocks if the model adds them
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        
-        results = json.loads(text.strip())
-        
-        if not isinstance(results, list) or len(results) != len(batch_papers):
-             raise ValueError(f"Expected list of length {len(batch_papers)}, got {type(results)}")
-             
-        return results
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            logging.info(f"Generating content for batch (size {len(batch_papers)}), attempt {attempt+1}")
+            response = model.generate_content(prompt)
+            text = response.text.strip()
+            
+            # Clean up potential markdown code blocks if the model adds them
+            if text.startswith("```json"):
+                text = text[7:]
+            if text.startswith("```"):
+                text = text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+            
+            results = json.loads(text.strip())
+            
+            if not isinstance(results, list) or len(results) != len(batch_papers):
+                 logging.error(f"Invalid JSON structure or length mismatch. Expected {len(batch_papers)}, got {len(results) if isinstance(results, list) else 'type:' + str(type(results))}")
+                 raise ValueError(f"Expected list of length {len(batch_papers)}")
+                 
+            return results
 
-    except Exception as e:
-        print(f"Batch processing error: {e}")
-        # Return empty results to trigger fallback or error handling in caller
-        return None
+        except Exception as e:
+            logging.warning(f"Batch processing error (attempt {attempt+1}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(5) # Wait before retry
+            else:
+                logging.error(f"Failed to process batch after {max_retries} attempts.")
+                logging.error(f"Raw Response Text (if available): {text if 'text' in locals() else 'None'}")
+                return None
+
+    return None
 
 def summarize_and_translate(papers, batch_size=5):
     """
@@ -80,6 +104,7 @@ def summarize_and_translate(papers, batch_size=5):
     # Create batches
     for i in range(0, len(papers), batch_size):
         batch = papers[i:i + batch_size]
+        logging.info(f"Processing batch {i//batch_size + 1} (Papers {i+1}-{min(i+batch_size, len(papers))})...")
         print(f"Processing batch {i//batch_size + 1} (Papers {i+1}-{min(i+batch_size, len(papers))})...")
         
         # Filter out papers with no abstract to avoid wasting tokens
@@ -91,6 +116,7 @@ def summarize_and_translate(papers, batch_size=5):
                 clean_batch.append(p)
             else:
                 p['summary_ja'] = "要約不可 (アブストラクトなし)"
+                logging.info(f"Skipping paper {p.get('id')} (No abstract)")
         
         if clean_batch:
             results = process_batch(model, clean_batch)
@@ -104,12 +130,11 @@ def summarize_and_translate(papers, batch_size=5):
                 for v_idx in valid_indices:
                      batch[v_idx]['summary_ja'] = "要約生成エラー"
                      batch[v_idx]['contribution_ja'] = "-"
+                     logging.error(f"Marked paper {batch[v_idx].get('id')} as Error due to batch failure")
         
         processed_papers.extend(batch)
         
-        # Respect rate limits (15 RPM for free tier = 4s delay, but batching reduces requests significantly)
-        # With batch size 5, we do ~10 requests for 50 papers. 
-        # A 2-second delay is safe and polite.
+        # Respect rate limits
         time.sleep(2.0)
 
     return processed_papers
