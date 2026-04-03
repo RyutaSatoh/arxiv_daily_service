@@ -56,7 +56,7 @@ def process_batch(model, batch_papers):
     ]
     """
 
-    max_retries = 3
+    max_retries = 5 # Increased for free tier
     for attempt in range(max_retries):
         try:
             logging.info(f"Generating content for batch (size {len(batch_papers)}), attempt {attempt+1}")
@@ -80,9 +80,27 @@ def process_batch(model, batch_papers):
             return results
 
         except Exception as e:
-            logging.warning(f"Batch processing error (attempt {attempt+1}): {e}")
+            error_str = str(e)
+            logging.warning(f"Batch processing error (attempt {attempt+1}): {error_str}")
+            
             if attempt < max_retries - 1:
-                time.sleep(5) # Wait before retry
+                # Try to parse recommended retry delay from error message
+                # e.g. "Please retry in 17.185952805s."
+                delay = 10 * (2 ** attempt) # Default exponential backoff: 10, 20, 40, 80...
+                
+                match = re.search(r'retry in ([\d\.]+)s', error_str)
+                if match:
+                    delay = float(match.group(1)) + 1.0 # Add 1s buffer
+                    logging.info(f"Parsed recommended retry delay: {delay}s")
+                else:
+                    # Alternative format check: "seconds: 19"
+                    match_sec = re.search(r'seconds: (\d+)', error_str)
+                    if match_sec:
+                        delay = float(match_sec.group(1)) + 2.0
+                        logging.info(f"Parsed recommended retry seconds: {delay}s")
+
+                logging.info(f"Waiting {delay}s before retry...")
+                time.sleep(delay)
             else:
                 logging.error(f"Failed to process batch after {max_retries} attempts.")
                 logging.error(f"Raw Response Text (if available): {text if 'text' in locals() else 'None'}")
@@ -134,7 +152,7 @@ def summarize_and_translate(papers, batch_size=5):
         
         processed_papers.extend(batch)
         
-        # Respect rate limits
-        time.sleep(2.0)
+        # Respect rate limits - Increased for free tier
+        time.sleep(5.0)
 
     return processed_papers
