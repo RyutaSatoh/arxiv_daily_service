@@ -2,6 +2,7 @@ flask
 requests
 beautifulsoup4
 google-generativeai
+google-genai
 schedule
 markdown
 pymupdf

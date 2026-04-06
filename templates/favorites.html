@@ -67,37 +67,63 @@
             });
         }
 
-        function generateSlides(dateStr, btn) {
+        function generateSlides(dateStr, btn, force = false) {
             const originalText = btn.innerText;
-            btn.innerText = "生成中 (Generating)...";
+            btn.innerText = "準備中 (Initializing)...";
             btn.disabled = true;
             
             fetch("{{ url_for('generate_slides', username=username) }}", {
                 method: "POST",
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date: dateStr })
+                body: JSON.stringify({ date: dateStr, force: force })
             })
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
-                    btn.innerText = "完了 (Done)!";
+                    // Cached file found
+                    btn.innerText = "完了 (Cached)!";
                     window.location.href = data.download_url;
-                    setTimeout(() => {
-                        btn.innerText = originalText;
-                        btn.disabled = false;
-                    }, 3000);
+                    setTimeout(() => { btn.innerText = "📄 Generate Slides (PDF)"; btn.disabled = false; }, 3000);
+                } else if (data.status === 'started' || data.status === 'processing') {
+                    // Background task started or already running
+                    startPolling(dateStr, btn);
                 } else {
                     alert('生成に失敗しました: ' + (data.message || 'Unknown error'));
-                    btn.innerText = originalText;
+                    btn.innerText = "📄 Generate Slides (PDF)";
                     btn.disabled = false;
                 }
             })
             .catch(err => {
                 console.error(err);
-                alert('エラーが発生しました');
-                btn.innerText = originalText;
+                alert('通信エラーが発生しました');
+                btn.innerText = "📄 Generate Slides (PDF)";
                 btn.disabled = false;
             });
+        }
+
+        function startPolling(dateStr, btn) {
+            const intervalId = setInterval(() => {
+                fetch(`/api/u/{{ username }}/generation_status/${dateStr}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'running') {
+                        btn.innerText = `生成中 (${data.progress})`;
+                    } else if (data.status === 'completed') {
+                        clearInterval(intervalId);
+                        btn.innerText = "完了 (Finished)!";
+                        window.location.href = data.download_url;
+                        setTimeout(() => { 
+                            btn.innerText = "📄 Generate Slides (PDF)"; 
+                            btn.disabled = false; 
+                        }, 3000);
+                    } else if (data.status === 'error') {
+                        clearInterval(intervalId);
+                        alert('エラーが発生しました: ' + data.error_msg);
+                        btn.innerText = "📄 Generate Slides (PDF)";
+                        btn.disabled = false;
+                    }
+                });
+            }, 3000); // Poll every 3 seconds
         }
     </script>
 </head>

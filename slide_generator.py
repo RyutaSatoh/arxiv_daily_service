@@ -23,8 +23,8 @@ class SlideContentExtractor:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY is required.")
         genai.configure(api_key=self.api_key)
-        # Using Gemini 3 Flash Preview for better reasoning
-        self.model = genai.GenerativeModel('gemini-3-flash-preview')
+        # Using the highest quality available Pro model for vision reasoning
+        self.model = genai.GenerativeModel('gemini-3-flash')
         
         self.font_path = os.path.join(os.path.dirname(__file__), 'data', 'HackGen-Regular.ttf')
         self._ensure_font()
@@ -142,6 +142,7 @@ class SlideContentExtractor:
             "title_en": "Original English Title",
             "title_ja": "日本語のタイトル",
             "authors": "著者名",
+            "affiliations": "著者の所属 (筆頭著者の所属、または主要な機関名)",
             "summary": "どんなもの？/どんな発見？",
             "novelty": "先行研究に比べてどこがすごい？",
             "method_key": "技術や手法のキモはどこ？",
@@ -175,16 +176,32 @@ class SlideContentExtractor:
             def crop_fig(fig_key):
                 fig_info = data.get(fig_key)
                 if not fig_info: return None
-                page_idx = fig_info.get("page_index", 0)
+                
+                page_idx = fig_info.get("page_index")
+                bbox = fig_info.get("bbox")
+                
+                if page_idx is None or bbox is None or not isinstance(bbox, list) or len(bbox) != 4:
+                    return None
+                    
                 if 0 <= page_idx < len(images):
                     target_img = images[page_idx]
                     w, h = target_img.size
-                    ymin, xmin, ymax, xmax = fig_info["bbox"]
+                    ymin, xmin, ymax, xmax = bbox
+                    
+                    # Ensure positive area
+                    if ymax <= ymin or xmax <= xmin:
+                        return None
+                        
                     left = (xmin / 1000) * w
                     top = (ymin / 1000) * h
                     right = (xmax / 1000) * w
                     bottom = (ymax / 1000) * h
-                    return target_img.crop((left, top, right, bottom))
+                    
+                    try:
+                        return target_img.crop((left, top, right, bottom))
+                    except Exception as e:
+                        print(f"Crop error for {fig_key}: {e}")
+                        return None
                 return None
 
             img1 = crop_fig("figure1")
@@ -267,21 +284,29 @@ class SlideContentExtractor:
         link_style = ParagraphStyle(
             'Link', fontName=self.font_name, fontSize=9, textColor=colors.blue, spaceBefore=2)
         
-        # Title & Authors (Top Row)
+        # Title & Authors & Affiliations (Top Row)
         # Use English Title
         display_title = meta.get('title_en') or meta.get('title_ja', 'No Title')
         title_text = f"<b>{display_title}</b><br/><font size=10 color=grey>{meta.get('authors', '')}</font>"
+        
+        affil = meta.get('affiliations')
+        if affil:
+            title_text += f"<br/><font size=9 color='#666666'>{affil}</font>"
+            
         title_p = Paragraph(title_text, title_style)
-        title_w, title_h = title_p.wrap(w - 2*margin, 100)
+        title_w, title_h = title_p.wrap(w - 2*margin, 100) # Wrap with sufficient height limit
         title_p.drawOn(c, margin, h - margin - title_h)
         
-        # arXiv Link
+        # arXiv Link (Below header)
         link_html = f'<link href="{arxiv_url}">{arxiv_url}</link>'
         link_p = Paragraph(link_html, link_style)
         lw, lh = link_p.wrap(w - 2*margin, 20)
-        link_p.drawOn(c, margin, h - margin - title_h - lh - 2)
         
-        content_top_y = h - margin - title_h - lh - 15
+        # Draw link below the title/author/affiliation block
+        link_y = h - margin - title_h - lh - 2
+        link_p.drawOn(c, margin, link_y)
+        
+        content_top_y = link_y - 15
         
         # Layout: Left Column (Text 55%), Right Column (Images 45%)
         col_gap = 20
@@ -319,19 +344,26 @@ class SlideContentExtractor:
         def draw_image_in_box(img_obj, x, y, box_w, box_h):
             if not img_obj: return
             from reportlab.lib.utils import ImageReader
-            img_reader = ImageReader(img_obj)
-            iw, ih = img_reader.getSize()
-            aspect = iw / ih
-            draw_w = box_w
-            draw_h = draw_w / aspect
-            if draw_h > box_h:
-                draw_h = box_h
-                draw_w = draw_h * aspect
-            
-            offset_x = x + (box_w - draw_w) / 2
-            offset_y = y + (box_h - draw_h) / 2
-            c.drawImage(img_reader, offset_x, offset_y, width=draw_w, height=draw_h)
-            c.rect(offset_x, offset_y, draw_w, draw_h, stroke=1, fill=0)
+            try:
+                img_reader = ImageReader(img_obj)
+                iw, ih = img_reader.getSize()
+                if iw <= 0 or ih <= 0:
+                    return # Skip invalid image
+
+                aspect = iw / ih
+                draw_w = box_w
+                draw_h = draw_w / aspect
+                if draw_h > box_h:
+                    draw_h = box_h
+                    draw_w = draw_h * aspect
+
+                # Center in box
+                offset_x = x + (box_w - draw_w) / 2
+                offset_y = y + (box_h - draw_h) / 2
+                c.drawImage(img_reader, offset_x, offset_y, width=draw_w, height=draw_h)
+                c.rect(offset_x, offset_y, draw_w, draw_h, stroke=1, fill=0) # Border
+            except Exception as e:
+                print(f"Error drawing image: {e}")
 
         box_h = (img_area_h - 10) / 2
         

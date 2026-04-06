@@ -2,6 +2,9 @@ from flask import Flask, render_template, abort, request, jsonify, redirect, url
 import storage
 import slide_generator
 import os
+import uuid
+import threading
+import time
 
 app = Flask(__name__)
 
@@ -86,6 +89,51 @@ def delete_favorites_by_date(username):
 
 import uuid
 
+import threading
+
+# Global status tracking for background tasks
+# { 'username_date': { 'status': 'running'|'completed'|'error', 'progress': '3/15', 'error_msg': '...' } }
+GENERATION_STATUS = {}
+
+def background_generate_slides(username, date_str, papers, output_path, status_key):
+    try:
+        extractor = slide_generator.SlideContentExtractor()
+        
+        # We need to track progress inside generate_slides_for_papers or similar.
+        # For now, let's wrap the loop here if possible, or just call the extractor.
+        # To provide granular progress, I'll modify the extractor's method or do it here.
+        
+        prs = slide_generator.landscape(slide_generator.A4)
+        c = slide_generator.canvas.Canvas(output_path, pagesize=prs)
+        w, h = prs
+        
+        # Title Page
+        c.setFont(extractor.font_name, 30)
+        c.drawCentredString(w/2, h/2 + 20, "ArXiv Paper Digest")
+        c.setFont(extractor.font_name, 16)
+        c.drawCentredString(w/2, h/2 - 20, f"Generated on {time.strftime('%Y-%m-%d')}")
+        c.showPage()
+        
+        for i, paper in enumerate(papers):
+            GENERATION_STATUS[status_key]['progress'] = f"{i+1}/{len(papers)}"
+            url = paper.get('url')
+            if not url: continue
+            
+            try:
+                data = extractor.extract_content(url)
+                if data:
+                    extractor._draw_paper_slide(c, data)
+                    c.showPage()
+            except Exception as e:
+                print(f"Error in background task for {url}: {e}")
+        
+        c.save()
+        GENERATION_STATUS[status_key]['status'] = 'completed'
+    except Exception as e:
+        print(f"Background task failed: {e}")
+        GENERATION_STATUS[status_key]['status'] = 'error'
+        GENERATION_STATUS[status_key]['error_msg'] = str(e)
+
 @app.route('/api/u/<username>/generate_slides', methods=['POST'])
 def generate_slides(username):
     if username not in SLIDE_GEN_WHITELIST:
@@ -98,54 +146,52 @@ def generate_slides(username):
     if not date_str:
         return jsonify({'status': 'error', 'message': 'Date required'}), 400
         
+    status_key = f"{username}_{date_str}"
+    
     # Get papers for this date
     favorites = storage.get_favorites(username)
-    target_papers = []
-    for p in favorites:
-        # Determine the paper's logical date
-        p_date = p.get('list_date')
-        if not p_date:
-            p_date = p.get('saved_at', '').split('T')[0]
-            
-        if p_date == date_str:
-            target_papers.append(p)
+    target_papers = [p for p in favorites if (p.get('list_date') or p.get('saved_at', '')[:10]) == date_str]
     
     if not target_papers:
         return jsonify({'status': 'error', 'message': 'No saved papers for this date'}), 404
         
-    # Generate slides
     output_dir = os.path.join(storage.USERS_DIR, username, 'slides')
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        
+    if not os.path.exists(output_dir): os.makedirs(output_dir)
     filename = f"slides_{date_str}.pdf"
     output_path = os.path.join(output_dir, filename)
     
-    # Check cache (skip if force=True)
+    # Check if already running
+    if status_key in GENERATION_STATUS and GENERATION_STATUS[status_key]['status'] == 'running':
+        return jsonify({'status': 'processing', 'progress': GENERATION_STATUS[status_key].get('progress')})
+
+    # Check cache
     if not force and os.path.exists(output_path):
-        print(f"Returning cached slides: {output_path}")
         download_url = url_for('download_slides', username=username, filename=filename)
         return jsonify({'status': 'success', 'download_url': download_url})
     
-    # Atomic write to prevent concurrent file corruption
-    temp_filename = f"temp_{uuid.uuid4().hex}.pdf"
-    temp_output_path = os.path.join(output_dir, temp_filename)
+    # Start background thread
+    GENERATION_STATUS[status_key] = {'status': 'running', 'progress': '0/%d' % len(target_papers)}
+    thread = threading.Thread(target=background_generate_slides, args=(username, date_str, target_papers, output_path, status_key))
+    thread.start()
     
-    try:
-        extractor = slide_generator.SlideContentExtractor()
-        extractor.generate_slides_for_papers(target_papers, temp_output_path)
+    return jsonify({'status': 'started'})
+
+@app.route('/api/u/<username>/generation_status/<date_str>')
+def generation_status(username, date_str):
+    status_key = f"{username}_{date_str}"
+    info = GENERATION_STATUS.get(status_key)
+    
+    # If not in memory but file exists, it's completed (from previous session)
+    if not info:
+        output_path = os.path.join(storage.USERS_DIR, username, 'slides', f"slides_{date_str}.pdf")
+        if os.path.exists(output_path):
+            return jsonify({'status': 'completed', 'download_url': url_for('download_slides', username=username, filename=f"slides_{date_str}.pdf")})
+        return jsonify({'status': 'not_found'})
         
-        # Atomic move
-        os.rename(temp_output_path, output_path)
+    if info['status'] == 'completed':
+        info['download_url'] = url_for('download_slides', username=username, filename=f"slides_{date_str}.pdf")
         
-        download_url = url_for('download_slides', username=username, filename=filename)
-        return jsonify({'status': 'success', 'download_url': download_url})
-    except Exception as e:
-        print(f"Slide generation error: {e}")
-        # Clean up temp file
-        if os.path.exists(temp_output_path):
-            os.remove(temp_output_path)
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    return jsonify(info)
 
 @app.route('/u/<username>/download_slides/<filename>')
 def download_slides(username, filename):

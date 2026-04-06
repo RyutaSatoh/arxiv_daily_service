@@ -115,7 +115,8 @@ def summarize_and_translate(papers, batch_size=5):
     Processes in batches to reduce API calls.
     """
     configure_genai()
-    model = genai.GenerativeModel('gemini-3-flash-preview') # Using flash for speed/cost effectiveness
+    # Using the highest quality available Pro model
+    model = genai.GenerativeModel('gemini-3-flash')
 
     processed_papers = []
     
