@@ -134,6 +134,8 @@ def background_generate_slides(username, date_str, papers, output_path, status_k
         GENERATION_STATUS[status_key]['status'] = 'error'
         GENERATION_STATUS[status_key]['error_msg'] = str(e)
 
+from batch_processor import BatchProcessor
+
 @app.route('/api/u/<username>/generate_slides', methods=['POST'])
 def generate_slides(username):
     if username not in SLIDE_GEN_WHITELIST:
@@ -142,6 +144,7 @@ def generate_slides(username):
     data = request.json
     date_str = data.get('date')
     force = data.get('force', False)
+    mode = data.get('mode', 'fast') # 'fast' or 'batch'
     
     if not date_str:
         return jsonify({'status': 'error', 'message': 'Date required'}), 400
@@ -169,12 +172,27 @@ def generate_slides(username):
         download_url = url_for('download_slides', username=username, filename=filename)
         return jsonify({'status': 'success', 'download_url': download_url})
     
-    # Start background thread
-    GENERATION_STATUS[status_key] = {'status': 'running', 'progress': '0/%d' % len(target_papers)}
-    thread = threading.Thread(target=background_generate_slides, args=(username, date_str, target_papers, output_path, status_key))
-    thread.start()
-    
-    return jsonify({'status': 'started'})
+    if mode == 'batch':
+        # Submit to Batch API
+        try:
+            extractor = slide_generator.SlideContentExtractor()
+            bp = BatchProcessor()
+            job_id = bp.submit_slide_batch(username, date_str, target_papers, extractor)
+            if job_id:
+                GENERATION_STATUS[status_key] = {'status': 'running', 'progress': 'Batch Submitted (Up to 24h)'}
+                return jsonify({'status': 'started', 'mode': 'batch'})
+            else:
+                return jsonify({'status': 'error', 'message': 'Failed to submit batch job'}), 500
+        except Exception as e:
+            print(f"Slide batch generation error: {e}")
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+    else:
+        # Start background thread (Fast mode)
+        GENERATION_STATUS[status_key] = {'status': 'running', 'progress': '0/%d' % len(target_papers)}
+        thread = threading.Thread(target=background_generate_slides, args=(username, date_str, target_papers, output_path, status_key))
+        thread.start()
+        
+        return jsonify({'status': 'started', 'mode': 'fast'})
 
 @app.route('/api/u/<username>/generation_status/<date_str>')
 def generation_status(username, date_str):

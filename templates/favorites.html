@@ -67,7 +67,7 @@
             });
         }
 
-        function generateSlides(dateStr, btn, force = false) {
+        function generateSlides(dateStr, mode, btn, force = false) {
             const originalText = btn.innerText;
             btn.innerText = "準備中 (Initializing)...";
             btn.disabled = true;
@@ -75,7 +75,7 @@
             fetch("{{ url_for('generate_slides', username=username) }}", {
                 method: "POST",
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date: dateStr, force: force })
+                body: JSON.stringify({ date: dateStr, mode: mode, force: force })
             })
             .then(res => res.json())
             .then(data => {
@@ -83,25 +83,25 @@
                     // Cached file found
                     btn.innerText = "完了 (Cached)!";
                     window.location.href = data.download_url;
-                    setTimeout(() => { btn.innerText = "📄 Generate Slides (PDF)"; btn.disabled = false; }, 3000);
+                    setTimeout(() => { btn.innerText = originalText; btn.disabled = false; }, 3000);
                 } else if (data.status === 'started' || data.status === 'processing') {
                     // Background task started or already running
-                    startPolling(dateStr, btn);
+                    startPolling(dateStr, btn, originalText);
                 } else {
                     alert('生成に失敗しました: ' + (data.message || 'Unknown error'));
-                    btn.innerText = "📄 Generate Slides (PDF)";
+                    btn.innerText = originalText;
                     btn.disabled = false;
                 }
             })
             .catch(err => {
                 console.error(err);
                 alert('通信エラーが発生しました');
-                btn.innerText = "📄 Generate Slides (PDF)";
+                btn.innerText = originalText;
                 btn.disabled = false;
             });
         }
 
-        function startPolling(dateStr, btn) {
+        function startPolling(dateStr, btn, originalText) {
             const intervalId = setInterval(() => {
                 fetch(`/api/u/{{ username }}/generation_status/${dateStr}`)
                 .then(res => res.json())
@@ -113,13 +113,13 @@
                         btn.innerText = "完了 (Finished)!";
                         window.location.href = data.download_url;
                         setTimeout(() => { 
-                            btn.innerText = "📄 Generate Slides (PDF)"; 
+                            btn.innerText = originalText; 
                             btn.disabled = false; 
                         }, 3000);
                     } else if (data.status === 'error') {
                         clearInterval(intervalId);
                         alert('エラーが発生しました: ' + data.error_msg);
-                        btn.innerText = "📄 Generate Slides (PDF)";
+                        btn.innerText = originalText;
                         btn.disabled = false;
                     }
                 });
@@ -144,8 +144,11 @@
                 <h5 class="mb-0">{{ date }}</h5>
                 <div>
                     {% if can_generate_slides %}
-                    <button class="btn btn-primary btn-sm me-2" onclick="generateSlides('{{ date }}', this)">
-                        📄 Generate Slides (PDF)
+                    <button class="btn btn-outline-primary btn-sm me-2" onclick="generateSlides('{{ date }}', 'fast', this)">
+                        ⚡ スライド生成 (Fast)
+                    </button>
+                    <button class="btn btn-success btn-sm me-2" onclick="generateSlides('{{ date }}', 'batch', this)">
+                        💰 スライド生成 (Batch 50%OFF)
                     </button>
                     {% endif %}
                     <button class="btn btn-danger btn-sm" onclick="deleteDate('{{ date }}')">

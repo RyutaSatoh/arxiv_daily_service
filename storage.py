@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from datetime import datetime
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
@@ -31,9 +32,12 @@ def get_available_dates():
     if not os.path.exists(DATA_DIR):
         return []
     
-    # Filter out directories and non-json files
+    # Filter for YYYY-MM-DD.json format and ensure it's a file
+    date_pattern = re.compile(r'^\d{4}-\d{2}-\d{2}\.json$')
+    
     files = [f for f in os.listdir(DATA_DIR) 
-             if f.endswith('.json') and os.path.isfile(os.path.join(DATA_DIR, f))]
+             if date_pattern.match(f) and os.path.isfile(os.path.join(DATA_DIR, f))]
+    
     dates = [f.replace('.json', '') for f in files]
     dates.sort(reverse=True)
     return dates

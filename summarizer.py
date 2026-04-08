@@ -116,7 +116,7 @@ def summarize_and_translate(papers, batch_size=5):
     """
     configure_genai()
     # Using the highest quality available Pro model
-    model = genai.GenerativeModel('gemini-3-flash')
+    model = genai.GenerativeModel('gemini-3-flash-preview')
 
     processed_papers = []
     

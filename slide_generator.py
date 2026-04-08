@@ -24,7 +24,7 @@ class SlideContentExtractor:
             raise ValueError("GEMINI_API_KEY is required.")
         genai.configure(api_key=self.api_key)
         # Using the highest quality available Pro model for vision reasoning
-        self.model = genai.GenerativeModel('gemini-3-flash')
+        self.model = genai.GenerativeModel('gemini-3-flash-preview')
         
         self.font_path = os.path.join(os.path.dirname(__file__), 'data', 'HackGen-Regular.ttf')
         self._ensure_font()
