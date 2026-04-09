@@ -25,8 +25,8 @@ class BatchProcessor:
             raise ValueError("GEMINI_API_KEY is required.")
         self.client = genai.Client(api_key=self.api_key, http_options={'api_version': 'v1beta'})
 
-    def is_job_running(self, job_type, date_str):
-        """Checks if a job of a certain type and date is already running."""
+    def is_job_running(self, job_type, date_str, user=None):
+        """Checks if a job of a certain type, date and optionally user is already running."""
         if not os.path.exists(JOBS_FILE):
             return False
         try:
@@ -36,6 +36,11 @@ class BatchProcessor:
                 if info['status'] == 'RUNNING' and \
                    info['metadata'].get('type') == job_type and \
                    info['metadata'].get('date') == date_str:
+                    
+                    # If user is specified, check it too
+                    if user and info['metadata'].get('user') != user:
+                        continue
+                        
                     return True
         except:
             return False

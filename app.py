@@ -163,7 +163,7 @@ def generate_slides(username):
     filename = f"slides_{date_str}.pdf"
     output_path = os.path.join(output_dir, filename)
     
-    # Check if already running
+    # Check if already running (memory status)
     if status_key in GENERATION_STATUS and GENERATION_STATUS[status_key]['status'] == 'running':
         return jsonify({'status': 'processing', 'progress': GENERATION_STATUS[status_key].get('progress')})
 
@@ -172,11 +172,18 @@ def generate_slides(username):
         download_url = url_for('download_slides', username=username, filename=filename)
         return jsonify({'status': 'success', 'download_url': download_url})
     
+    # Initialize BatchProcessor early for checks
+    bp = BatchProcessor()
+
     if mode == 'batch':
+        # Check if a batch job is already in progress for this date/user (persistent check)
+        if bp.is_job_running('slide', date_str, user=username):
+            GENERATION_STATUS[status_key] = {'status': 'running', 'progress': 'Batch Submitted (Up to 24h)'}
+            return jsonify({'status': 'processing', 'progress': 'Batch job already in progress'})
+
         # Submit to Batch API
         try:
             extractor = slide_generator.SlideContentExtractor()
-            bp = BatchProcessor()
             job_id = bp.submit_slide_batch(username, date_str, target_papers, extractor)
             if job_id:
                 GENERATION_STATUS[status_key] = {'status': 'running', 'progress': 'Batch Submitted (Up to 24h)'}
