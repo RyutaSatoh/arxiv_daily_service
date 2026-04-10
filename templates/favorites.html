@@ -144,12 +144,38 @@
                 <h5 class="mb-0">{{ date }}</h5>
                 <div>
                     {% if can_generate_slides %}
-                    <button class="btn btn-outline-primary btn-sm me-2" onclick="generateSlides('{{ date }}', 'fast', this)">
-                        ⚡ スライド生成 (Fast)
-                    </button>
-                    <button class="btn btn-success btn-sm me-2" onclick="generateSlides('{{ date }}', 'batch', this)">
-                        💰 スライド生成 (Batch 50%OFF)
-                    </button>
+                        {% if date in completed_slide_dates %}
+                            <a href="{{ url_for('download_slides', username=username, filename='slides_' + date + '.pdf') }}" class="btn btn-primary btn-sm me-2">
+                                ✅ Download Slides (PDF)
+                            </a>
+                            <div class="btn-group">
+                                <button class="btn btn-outline-secondary btn-sm" onclick="generateSlides('{{ date }}', 'fast', this, true)">
+                                    再生成 (Fast)
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" id="btn-batch-{{ date }}" 
+                                        {% if date in active_job_dates %}disabled data-batch-running="true"{% endif %}
+                                        onclick="generateSlides('{{ date }}', 'batch', this, true)">
+                                    {% if date in active_job_dates %}💰 生成中 (Batch){% else %}再生成 (Batch 50%OFF){% endif %}
+                                </button>
+                            </div>
+                        {% else %}
+                            <button class="btn btn-outline-primary btn-sm me-2" onclick="generateSlides('{{ date }}', 'fast', this)">
+                                ⚡ スライド生成 (Fast)
+                            </button>
+                            <button class="btn btn-success btn-sm me-2" 
+                                    id="btn-batch-{{ date }}"
+                                    {% if date in active_job_dates %}
+                                    disabled
+                                    data-batch-running="true"
+                                    {% endif %}
+                                    onclick="generateSlides('{{ date }}', 'batch', this)">
+                                {% if date in active_job_dates %}
+                                💰 生成中 (Batch Submitted)
+                                {% else %}
+                                💰 スライド生成 (Batch 50%OFF)
+                                {% endif %}
+                            </button>
+                        {% endif %}
                     {% endif %}
                     <button class="btn btn-danger btn-sm" onclick="deleteDate('{{ date }}')">
                         削除 (Delete Day)
@@ -182,5 +208,17 @@
         </div>
         {% endfor %}
     </div>
+
+    <script>
+        // Auto-start polling for running batch jobs on page load
+        window.addEventListener('load', () => {
+            document.querySelectorAll('[data-batch-running="true"]').forEach(btn => {
+                const dateStr = btn.id.replace('btn-batch-', '');
+                // We need the original text to restore it later. 
+                // For batch buttons, it's "💰 スライド生成 (Batch 50%OFF)"
+                startPolling(dateStr, btn, "💰 スライド生成 (Batch 50%OFF)");
+            });
+        });
+    </script>
 </body>
 </html>

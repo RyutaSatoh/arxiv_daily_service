@@ -5,6 +5,7 @@ import os
 import uuid
 import threading
 import time
+import json
 
 app = Flask(__name__)
 
@@ -57,7 +58,41 @@ def favorites(username):
     
     can_generate_slides = username in SLIDE_GEN_WHITELIST
     
-    return render_template('favorites.html', grouped_papers=grouped_papers, sorted_dates=sorted_dates, username=username, can_generate_slides=can_generate_slides)
+    # Identify active batch jobs for this user to reflect on UI
+    active_job_dates = []
+    completed_slide_dates = []
+    
+    try:
+        from batch_processor import JOBS_FILE
+        bp = BatchProcessor()
+        if os.path.exists(JOBS_FILE):
+            with open(JOBS_FILE, 'r') as f:
+                jobs = json.load(f)
+                for job_id, info in jobs.items():
+                    if info['status'] == 'RUNNING' and \
+                       info['metadata'].get('type') == 'slide' and \
+                       info['metadata'].get('user') == username:
+                        active_job_dates.append(info['metadata'].get('date'))
+        
+        # Check for existing PDF files
+        output_dir = os.path.join(storage.USERS_DIR, username, 'slides')
+        if os.path.exists(output_dir):
+            files = os.listdir(output_dir)
+            for f in files:
+                if f.startswith('slides_') and f.endswith('.pdf'):
+                    date_part = f.replace('slides_', '').replace('.pdf', '')
+                    completed_slide_dates.append(date_part)
+                    
+    except Exception as e:
+        print(f"Error checking active/completed jobs for UI: {e}")
+
+    return render_template('favorites.html', 
+                           grouped_papers=grouped_papers, 
+                           sorted_dates=sorted_dates, 
+                           username=username, 
+                           can_generate_slides=can_generate_slides,
+                           active_job_dates=active_job_dates,
+                           completed_slide_dates=completed_slide_dates)
 
 # API endpoints now include username in the URL for better REST structure/security scoping
 @app.route('/api/u/<username>/save_paper', methods=['POST'])
